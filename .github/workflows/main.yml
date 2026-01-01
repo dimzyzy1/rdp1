@@ -18,40 +18,36 @@ jobs:
     steps:
 
       - name: Configure Core RDP Settings
-
         run: |
+          # Fungsi untuk mengatur nilai registry dengan aman
+          function Set-RegistryValue {
+            param($Path, $Name, $Value)
+            if (!(Test-Path $Path)) {
+              New-Item -Path $Path -Force | Out-Null
+            }
+            if (Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue) {
+              Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force
+            } else {
+              New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType DWord -Force | Out-Null
+            }
+          }
 
-          # Enable Remote Desktop and disable Network Level Authentication (if needed)
+          # Aktifkan Remote Desktop
+          Set-RegistryValue -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
 
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+          # Nonaktifkan NLA dan atur lapisan keamanan (catatan: gunakan backslash tunggal)
+          Set-RegistryValue -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+          Set-RegistryValue -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0
 
-                              -Name "fDenyTSConnections" -Value 0 -Force
+          # Hapus aturan firewall yang ada
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
 
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+          # Izinkan port RDP
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
 
-                              -Name "UserAuthentication" -Value 0 -Force
-
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-
-                              -Name "SecurityLayer" -Value 0 -Force
-
-
-          # Remove any existing rule with the same name to avoid duplication
-
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-
-        
-
-          # For testing, allow any incoming connection on port 3389
-
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-
-            dir=in action=allow protocol=TCP localport=3389
-
-
-          # (Optional) Restart the Remote Desktop service to ensure changes take effect
-
+          # Restart layanan TermService
           Restart-Service -Name TermService -Force
+
 
 
       - name: Create RDP User with Secure Password
